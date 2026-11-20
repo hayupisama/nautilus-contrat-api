@@ -23,7 +23,17 @@ Le workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) s'exécute su
 `npm run lint` puis `npm run generate:check`. Sur un tag `vX.Y.Z`, il vérifie que le tag égale `info.version`,
 génère les clients Dart (`dart-dio`) et TypeScript Angular, puis crée une release GitHub qui contient
 `nautilus-client-dart-vX.Y.Z.zip`, `nautilus-client-typescript-angular-vX.Y.Z.zip` et `openapi-vX.Y.Z.yaml`.
+Le contrôle de version (`scripts/check-version.mjs`) vérifie aussi que `package.json` porte la même version que `info.version`, et la publication exige que le commit tagué soit ancêtre de `origin/main`. Les artefacts sont conservés 7 jours.
 Aucun secret n'est requis (jeton `GITHUB_TOKEN` fourni par GitHub). Les actions sont épinglées par SHA.
+
+### Déclenchement manuel (publier ou rejouer un tag existant)
+
+Le workflow accepte `workflow_dispatch` avec les entrées `tag` (obligatoire, format `vX.Y.Z`) et `dry_run` (défaut `false` ; `true` génère les artefacts sans créer la release). Le fichier `ci.yml` utilisé est celui de la branche choisie avec `--ref` (par défaut `main`).
+
+```
+gh workflow run ci.yml -R hayupisama/nautilus-contrat-api -f tag=v0.2.0
+gh workflow run ci.yml -R hayupisama/nautilus-contrat-api --ref us/3-ci-contrat -f tag=v0.2.0 -f dry_run=true   # essai à blanc
+```
 
 ## Monter de version
 
