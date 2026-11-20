@@ -7,8 +7,6 @@ rules:
   operation-summary: error
   operation-operationId-unique: error
   tag-description: error
-  # Le serveur local (localhost) est voulu : contrat de développement (conception section 3).
-  no-server-example.com: off
   rule/operation-roles:
     subject:
       type: Operation

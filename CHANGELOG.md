@@ -14,7 +14,9 @@ peut intervenir dans une version mineure (décision D2).
 - Erreurs : réponses réutilisables 400/401/403/404/409/413/415/422 en `application/problem+json`, `Problem` enrichi (`errors`, URN `urn:nautilus:problem:<code>`).
 - Sécurité : description OIDC (Authorization Code + PKCE), serveur local en premier.
 - `Booking` : `needsProfile` (copie figée à la demande, Q3 = A), `passengerContact` (visible du chauffeur après acceptation, Q2 = B), `companions`, `withWaiting`, `comment`, dates et annulation.
-- Extension `x-nautilus-roles` sur chaque opération.
+- Extensions `x-nautilus-roles` et `x-nautilus-ownership` (règle propriétaire) sur chacune des 29 opérations.
+- `validateDriver` : réponse 409 `invalid-status-transition` ; `updateDriverProfile` documente que `id`, `validationStatus` et `certifiedPmr` sont ignorés.
+- Lint : exception ciblée `.redocly.lint-ignore.yaml` pour le serveur local ; `check-generated.mjs` interdit aussi `*Request` non voulu et `Object`.
 
 ### Modifié
 - Enums et objets en ligne extraits en schémas nommés (plus de `InlineObject*`).
@@ -23,7 +25,7 @@ peut intervenir dans une version mineure (décision D2).
 - Montants : `minimum: 0`, `multipleOf: 0.01` ; `EstimatedPrice.currency` en enum `Currency [EUR]`.
 - `Problem` : `type`, `title`, `status` obligatoires.
 - `uploadDriverDocument` : `file` en `format: binary`, réponse 201 `DriverDocument`.
-- `ServiceArea` limité à `Polygon` au lot 0.
+- `ServiceArea` limité à `Polygon` au lot 0 ; plusieurs zones viendront par une évolution versionnée selon D2 (ex. nouvelle propriété `areas: ServiceArea[]`). Contraintes GeoJSON ajoutées (anneaux, positions), motif `HH:mm` strict pour `Availability`, `Problem.status` borné 400-599.
 
 ### Supprimé
 - Aucune route `/auth/*` (portée par Keycloak, décision D1).

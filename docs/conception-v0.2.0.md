@@ -123,7 +123,7 @@ Nouveaux :
 - `DriverProfile` : `id` (ro), `displayName`, `offeredAssistance: AssistanceType[]`, `offersTransferHelp`, `acceptsAssistanceAnimals`, `signLanguage`, `trainings: string[]` (max 20 x 200), `validationStatus` (ro), `certifiedPmr` (ro, toujours `false` au lot 0), `vtcCardNumber`, `vtcRegistryNumber`.
 - `DriverValidationStatus` (`PENDING`, `APPROVED`, `REJECTED`, `SUSPENDED`), `DriverValidationDecision` (`decision`, `reason` 1-1000), `DriverSummary` (`id`, `displayName`, `validationStatus`, `pendingDocuments`, `createdAt`).
 - `DriverDocument` : `id`, `type`, `status: DriverDocumentStatus` (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`), `expiresOn?`, `fileName`, `mediaType`, `uploadedAt` (tous ro sauf `type`, `expiresOn`).
-- `ServiceArea` : géométrie GeoJSON (`type: Polygon | MultiPolygon`, `coordinates`), WGS 84 ; défaut serveur : Nantes Métropole + aéroport + gare.
+- `ServiceArea` : géométrie GeoJSON (`type: Polygon` au lot 0, `coordinates` ; plusieurs zones viendront par une évolution versionnée selon D2, ex. propriété `areas: ServiceArea[]`), WGS 84 ; défaut serveur : Nantes Métropole + aéroport + gare.
 - `PassengerContact` : `displayName`, `phone`, `preferredContact` (voir Q2).
 - Enums extraits : `MobilityType`, `WheelchairWeightRange`, `TransferAbility`, `AssistanceType`, `PreferredContact`, `ComfortNeed`, `VehicleType`, `DayOfWeek`, `SortCriterion`, `ValidationDecision`.
 

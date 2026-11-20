@@ -43,6 +43,7 @@ paths:
       summary: Lire le compte de l'utilisateur connecté
       description: Crée le compte à la première connexion.
       x-nautilus-roles: [PASSENGER, BOOKER, DRIVER, ADMIN]
+      x-nautilus-ownership: "soi : le compte est celui du jeton"
       responses:
         '200':
           description: Compte courant
@@ -60,6 +61,7 @@ paths:
       operationId: getNeedsProfile
       summary: Lire le profil de besoins d'un passager
       x-nautilus-roles: [PASSENGER, BOOKER]
+      x-nautilus-ownership: "passager (soi : passengerId du compte) ou réservant (passager géré : présent dans managedPassengers)"
       responses:
         '200':
           description: Profil de besoins
@@ -74,6 +76,7 @@ paths:
       operationId: updateNeedsProfile
       summary: Créer ou modifier le profil de besoins d'un passager
       x-nautilus-roles: [PASSENGER, BOOKER]
+      x-nautilus-ownership: "passager (soi : passengerId du compte) ou réservant (passager géré : présent dans managedPassengers)"
       requestBody:
         required: true
         content:
@@ -97,6 +100,7 @@ paths:
       summary: Chercher les chauffeurs compatibles pour un trajet et un créneau
       description: Une liste vide signifie qu'aucun chauffeur n'est compatible ; la demande non servie est enregistrée côté serveur.
       x-nautilus-roles: [PASSENGER, BOOKER]
+      x-nautilus-ownership: "passager (soi) ou réservant (passager géré) pour le passengerId du corps ; sinon 404"
       requestBody:
         required: true
         content:
@@ -122,6 +126,7 @@ paths:
       operationId: createBooking
       summary: Envoyer une demande de réservation à un chauffeur
       x-nautilus-roles: [PASSENGER, BOOKER]
+      x-nautilus-ownership: "passager (soi) ou réservant (passager géré) pour le passengerId du corps ; sinon 404"
       requestBody:
         required: true
         content:
@@ -151,6 +156,7 @@ paths:
       operationId: getBooking
       summary: Lire une réservation
       x-nautilus-roles: [PASSENGER, BOOKER, DRIVER, ADMIN]
+      x-nautilus-ownership: "parties à la réservation (passager, réservant, chauffeur destinataire) ; ADMIN : toutes ; sinon 404"
       responses:
         '200':
           description: Réservation
@@ -170,6 +176,7 @@ paths:
       summary: Lister les réservations d'un passager
       description: Tri par heure de prise en charge croissante.
       x-nautilus-roles: [PASSENGER, BOOKER]
+      x-nautilus-ownership: "passager (soi : passengerId du compte) ou réservant (passager géré : présent dans managedPassengers)"
       parameters:
         - $ref: '#/components/parameters/BookingStatusFilter'
         - $ref: '#/components/parameters/From'
@@ -196,6 +203,7 @@ paths:
       summary: Lister les réservations adressées à un chauffeur
       description: Tri par heure de prise en charge croissante.
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "soi : l'identifiant du chemin doit être celui du chauffeur connecté"
       parameters:
         - $ref: '#/components/parameters/BookingStatusFilter'
         - $ref: '#/components/parameters/From'
@@ -221,6 +229,7 @@ paths:
       operationId: acceptBooking
       summary: Accepter une demande de réservation
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "chauffeur destinataire de la réservation ; sinon 404"
       responses:
         '200':
           description: Réservation acceptée
@@ -240,6 +249,7 @@ paths:
       operationId: rejectBooking
       summary: Refuser une demande de réservation
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "chauffeur destinataire de la réservation ; sinon 404"
       responses:
         '200':
           description: Réservation refusée
@@ -259,6 +269,7 @@ paths:
       operationId: updateBookingStatus
       summary: Faire avancer le statut de la course
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "chauffeur destinataire de la réservation ; sinon 404"
       requestBody:
         required: true
         content:
@@ -284,6 +295,7 @@ paths:
       operationId: cancelBooking
       summary: Annuler une réservation
       x-nautilus-roles: [PASSENGER, BOOKER, DRIVER]
+      x-nautilus-ownership: "parties à la réservation (passager, réservant, chauffeur destinataire) ; sinon 404"
       requestBody:
         content:
           application/json:
@@ -309,6 +321,7 @@ paths:
       summary: Noter une course terminée
       description: Implémentation prévue au lot 1 ; contrat conservé dès maintenant.
       x-nautilus-roles: [PASSENGER, BOOKER]
+      x-nautilus-ownership: "passager ou réservant parties à la réservation ; sinon 404"
       requestBody:
         required: true
         content:
@@ -330,6 +343,7 @@ paths:
       operationId: getDriverProfile
       summary: Lire le profil d'un chauffeur
       x-nautilus-roles: [DRIVER, ADMIN]
+      x-nautilus-ownership: "chauffeur (soi : l'identifiant du chemin est celui du chauffeur connecté) ; ADMIN : lecture de tout chauffeur ; sinon 404"
       responses:
         '200':
           description: Profil du chauffeur
@@ -343,8 +357,11 @@ paths:
       tags: [drivers]
       operationId: updateDriverProfile
       summary: Modifier le profil du chauffeur
-      description: Les champs de validation sont en lecture seule.
+      description: |
+        Le serveur ignore `id`, `validationStatus` et `certifiedPmr` s'ils sont fournis : un chauffeur
+        ne peut pas s'auto-valider (la validation passe par `validateDriver`, rôle ADMIN).
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "soi : l'identifiant du chemin doit être celui du chauffeur connecté ; sinon 404"
       requestBody:
         required: true
         content:
@@ -369,6 +386,7 @@ paths:
       operationId: listDriverVehicles
       summary: Lister les véhicules et équipements du chauffeur
       x-nautilus-roles: [DRIVER, ADMIN]
+      x-nautilus-ownership: "chauffeur (soi : l'identifiant du chemin est celui du chauffeur connecté) ; ADMIN : lecture de tout chauffeur ; sinon 404"
       responses:
         '200':
           description: Véhicules du chauffeur
@@ -385,6 +403,7 @@ paths:
       operationId: replaceDriverVehicles
       summary: Déclarer les véhicules et équipements du chauffeur
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "soi : l'identifiant du chemin doit être celui du chauffeur connecté ; sinon 404"
       requestBody:
         required: true
         content:
@@ -413,6 +432,7 @@ paths:
       operationId: getPriceGrid
       summary: Lire la grille tarifaire du chauffeur
       x-nautilus-roles: [DRIVER, ADMIN]
+      x-nautilus-ownership: "chauffeur (soi : l'identifiant du chemin est celui du chauffeur connecté) ; ADMIN : lecture de tout chauffeur ; sinon 404"
       responses:
         '200':
           description: Grille tarifaire
@@ -427,6 +447,7 @@ paths:
       operationId: updatePriceGrid
       summary: Définir la grille tarifaire du chauffeur
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "soi : l'identifiant du chemin doit être celui du chauffeur connecté ; sinon 404"
       requestBody:
         required: true
         content:
@@ -451,6 +472,7 @@ paths:
       operationId: listAvailabilities
       summary: Lister les disponibilités hebdomadaires du chauffeur
       x-nautilus-roles: [DRIVER, ADMIN]
+      x-nautilus-ownership: "chauffeur (soi : l'identifiant du chemin est celui du chauffeur connecté) ; ADMIN : lecture de tout chauffeur ; sinon 404"
       responses:
         '200':
           description: Disponibilités du chauffeur
@@ -467,6 +489,7 @@ paths:
       operationId: replaceAvailabilities
       summary: Définir les disponibilités hebdomadaires du chauffeur
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "soi : l'identifiant du chemin doit être celui du chauffeur connecté ; sinon 404"
       requestBody:
         required: true
         content:
@@ -496,6 +519,7 @@ paths:
       operationId: getServiceArea
       summary: Lire la zone d'intervention du chauffeur
       x-nautilus-roles: [DRIVER, ADMIN]
+      x-nautilus-ownership: "chauffeur (soi : l'identifiant du chemin est celui du chauffeur connecté) ; ADMIN : lecture de tout chauffeur ; sinon 404"
       responses:
         '200':
           description: Zone d'intervention
@@ -510,6 +534,7 @@ paths:
       operationId: updateServiceArea
       summary: Définir la zone d'intervention du chauffeur
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "soi : l'identifiant du chemin doit être celui du chauffeur connecté ; sinon 404"
       requestBody:
         required: true
         content:
@@ -534,6 +559,7 @@ paths:
       operationId: listDriverDocuments
       summary: Lister les justificatifs du chauffeur
       x-nautilus-roles: [DRIVER, ADMIN]
+      x-nautilus-ownership: "chauffeur (soi : l'identifiant du chemin est celui du chauffeur connecté) ; ADMIN : lecture de tout chauffeur ; sinon 404"
       responses:
         '200':
           description: Justificatifs du chauffeur
@@ -551,6 +577,7 @@ paths:
       summary: Déposer un justificatif
       description: Fichier PDF, JPEG ou PNG de 10 Mo maximum.
       x-nautilus-roles: [DRIVER]
+      x-nautilus-ownership: "soi : l'identifiant du chemin doit être celui du chauffeur connecté ; sinon 404"
       requestBody:
         required: true
         content:
@@ -582,6 +609,7 @@ paths:
       operationId: downloadDriverDocument
       summary: Télécharger le fichier d'un justificatif
       x-nautilus-roles: [DRIVER, ADMIN]
+      x-nautilus-ownership: "chauffeur (soi : l'identifiant du chemin est celui du chauffeur connecté) ; ADMIN : lecture de tout chauffeur ; sinon 404"
       responses:
         '200':
           description: Contenu du justificatif
@@ -602,6 +630,7 @@ paths:
       operationId: listDriversForAdmin
       summary: Lister les chauffeurs, notamment ceux à valider
       x-nautilus-roles: [ADMIN]
+      x-nautilus-ownership: "aucune : réservé au rôle ADMIN"
       parameters:
         - $ref: '#/components/parameters/ValidationStatusFilter'
         - $ref: '#/components/parameters/Page'
@@ -625,6 +654,7 @@ paths:
       summary: Valider, refuser ou suspendre un chauffeur
       description: Action journalisée ; le motif est obligatoire.
       x-nautilus-roles: [ADMIN]
+      x-nautilus-ownership: "aucune : réservé au rôle ADMIN"
       requestBody:
         required: true
         content:
@@ -640,6 +670,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /admin/bookings:
     get:
@@ -648,6 +679,7 @@ paths:
       summary: Lister toutes les réservations
       description: Tri par heure de prise en charge croissante.
       x-nautilus-roles: [ADMIN]
+      x-nautilus-ownership: "aucune : réservé au rôle ADMIN"
       parameters:
         - $ref: '#/components/parameters/BookingStatusFilter'
         - $ref: '#/components/parameters/From'
@@ -771,9 +803,9 @@ components:
       properties:
         type: { type: string, format: uri, example: 'urn:nautilus:problem:validation-error' }
         title: { type: string }
-        status: { type: integer }
+        status: { type: integer, minimum: 400, maximum: 599 }
         detail: { type: string }
-        instance: { type: string }
+        instance: { type: string, format: uri-reference }
         errors:
           type: array
           description: Détail des champs invalides (400)
@@ -844,7 +876,7 @@ components:
 
     ServiceAreaGeometryType:
       type: string
-      description: "Lot 0 limité à Polygon (MultiPolygon exigerait un niveau d'imbrication de plus, ajout ultérieur non cassant)"
+      description: "Lot 0 limité à Polygon ; plusieurs zones viendront par une évolution versionnée selon D2 (ex. nouvelle propriété areas: ServiceArea[])"
       enum: [Polygon]
 
     ServiceArea:
@@ -857,11 +889,15 @@ components:
         type: { $ref: '#/components/schemas/ServiceAreaGeometryType' }
         coordinates:
           type: array
-          description: "Coordonnées GeoJSON d'un Polygon (anneaux de positions longitude, latitude)"
+          description: "Coordonnées GeoJSON d'un Polygon (anneaux fermés d'au moins 4 positions longitude, latitude)"
+          minItems: 1
           items:
             type: array
+            minItems: 4
             items:
               type: array
+              minItems: 2
+              maxItems: 2
               items:
                 type: number
 
@@ -1120,8 +1156,8 @@ components:
       required: [dayOfWeek, start, end]
       properties:
         dayOfWeek: { $ref: '#/components/schemas/DayOfWeek' }
-        start: { type: string, pattern: '^\d{2}:\d{2}$' }
-        end: { type: string, pattern: '^\d{2}:\d{2}$' }
+        start: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$' }
+        end: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$' }
 
     DriverValidationStatus:
       type: string

@@ -11,7 +11,7 @@ Version 0.2.0 (lot 0), conception : `docs/conception-v0.2.0.md`.
 
 ## Règles
 
-- Versionnement sémantique dans `info.version` + tag git `vX.Y.Z`. Changement cassant = version majeure.
+- Versionnement sémantique dans `info.version` + tag git `vX.Y.Z`. Avant 1.0.0, un changement cassant est permis en version mineure ; à partir de 1.0.0, changement cassant = version majeure (décision D2, nautilus/docs/decisions.md).
 - Noms : chemins en kebab-case anglais, schémas en PascalCase, propriétés en camelCase. Termes : voir `nautilus/docs/glossaire.md`.
 - Chaque opération a `operationId`, `summary` en français, réponses d'erreur au format `Problem` (RFC 9457).
 - Valider avant chaque commit : `npx @redocly/cli lint openapi.yaml`.

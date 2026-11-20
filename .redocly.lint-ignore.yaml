@@ -1,0 +1,5 @@
+# Exceptions ciblées du lint Redocly.
+# Le serveur local (localhost) est voulu : contrat de développement (conception section 3).
+openapi.yaml:
+  no-server-example.com:
+    - '#/servers/0/url'
