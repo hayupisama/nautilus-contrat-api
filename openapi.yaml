@@ -1,0 +1,492 @@
+openapi: 3.1.0
+info:
+  title: Nautilus API
+  version: 0.1.0
+  summary: API de réservation de VTC dédiée aux PMR (nom de code Nautilus)
+  description: |
+    Brouillon issu du cahier des charges (section 8.3). Contract-first : ce fichier est la source
+    de vérité ; serveur Quarkus et clients Dart / TypeScript en sont générés.
+  license:
+    name: PolyForm Noncommercial 1.0.0
+    identifier: PolyForm-Noncommercial-1.0.0
+servers:
+  - url: https://api.nautilus.example/v1
+    description: Production (URL provisoire)
+security:
+  - oidc: []
+tags:
+  - name: needs-profiles
+    description: Profils de besoins des passagers
+  - name: drivers
+    description: Profil, véhicules, tarifs et justificatifs des chauffeurs
+  - name: search
+    description: Recherche de chauffeurs compatibles
+  - name: bookings
+    description: Réservations et déroulé des courses
+  - name: admin
+    description: Back-office administrateur
+
+paths:
+  /passengers/{passengerId}/needs-profile:
+    parameters:
+      - $ref: '#/components/parameters/PassengerId'
+    get:
+      tags: [needs-profiles]
+      operationId: getNeedsProfile
+      summary: Lire le profil de besoins d'un passager
+      responses:
+        '200':
+          description: Profil de besoins
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NeedsProfile' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [needs-profiles]
+      operationId: updateNeedsProfile
+      summary: Créer ou modifier le profil de besoins d'un passager
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NeedsProfile' }
+      responses:
+        '200':
+          description: Profil enregistré
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NeedsProfile' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /driver-searches:
+    post:
+      tags: [search]
+      operationId: searchDrivers
+      summary: Chercher les chauffeurs compatibles pour un trajet et un créneau
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DriverSearchRequest' }
+      responses:
+        '200':
+          description: Chauffeurs compatibles avec prix estimé
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DriverOffer' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /bookings:
+    post:
+      tags: [bookings]
+      operationId: createBooking
+      summary: Envoyer une demande de réservation à un chauffeur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookingRequest' }
+      responses:
+        '201':
+          description: Demande créée (statut REQUESTED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /bookings/{bookingId}:
+    parameters:
+      - $ref: '#/components/parameters/BookingId'
+    get:
+      tags: [bookings]
+      operationId: getBooking
+      summary: Lire une réservation
+      responses:
+        '200':
+          description: Réservation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /bookings/{bookingId}/acceptance:
+    parameters:
+      - $ref: '#/components/parameters/BookingId'
+    post:
+      tags: [bookings]
+      operationId: acceptBooking
+      summary: Le chauffeur accepte la demande
+      responses:
+        '200':
+          description: Réservation acceptée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /bookings/{bookingId}/rejection:
+    parameters:
+      - $ref: '#/components/parameters/BookingId'
+    post:
+      tags: [bookings]
+      operationId: rejectBooking
+      summary: Le chauffeur refuse la demande
+      responses:
+        '200':
+          description: Réservation refusée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /bookings/{bookingId}/status:
+    parameters:
+      - $ref: '#/components/parameters/BookingId'
+    post:
+      tags: [bookings]
+      operationId: updateBookingStatus
+      summary: Faire avancer le statut de la course (chauffeur)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [DRIVER_EN_ROUTE, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED]
+      responses:
+        '200':
+          description: Statut mis à jour
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /bookings/{bookingId}/cancellation:
+    parameters:
+      - $ref: '#/components/parameters/BookingId'
+    post:
+      tags: [bookings]
+      operationId: cancelBooking
+      summary: Annuler une réservation (passager, réservant ou chauffeur)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Réservation annulée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /bookings/{bookingId}/rating:
+    parameters:
+      - $ref: '#/components/parameters/BookingId'
+    post:
+      tags: [bookings]
+      operationId: rateBooking
+      summary: Noter une course terminée
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Rating' }
+      responses:
+        '201': { description: Note enregistrée }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /drivers/{driverId}/vehicles:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+    put:
+      tags: [drivers]
+      operationId: replaceDriverVehicles
+      summary: Déclarer les véhicules et équipements du chauffeur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/Vehicle' }
+      responses:
+        '200': { description: Véhicules enregistrés }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /drivers/{driverId}/price-grid:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+    put:
+      tags: [drivers]
+      operationId: updatePriceGrid
+      summary: Définir la grille tarifaire du chauffeur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PriceGrid' }
+      responses:
+        '200': { description: Grille enregistrée }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /drivers/{driverId}/availabilities:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+    put:
+      tags: [drivers]
+      operationId: replaceAvailabilities
+      summary: Définir les disponibilités hebdomadaires du chauffeur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/Availability' }
+      responses:
+        '200': { description: Disponibilités enregistrées }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /drivers/{driverId}/documents:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+    post:
+      tags: [drivers]
+      operationId: uploadDriverDocument
+      summary: Déposer un justificatif
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [type, file]
+              properties:
+                type: { $ref: '#/components/schemas/DriverDocumentType' }
+                expiresOn: { type: string, format: date }
+                file: { type: string, contentMediaType: application/octet-stream }
+      responses:
+        '201': { description: 'Justificatif déposé, en attente de validation' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /admin/drivers/{driverId}/validation:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+    post:
+      tags: [admin]
+      operationId: validateDriver
+      summary: Valider ou refuser un chauffeur (action journalisée)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, reason]
+              properties:
+                decision: { type: string, enum: [APPROVED, REJECTED, SUSPENDED] }
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        '200': { description: Décision enregistrée }
+        '400': { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://auth.nautilus.example/realms/nautilus/.well-known/openid-configuration
+
+  parameters:
+    PassengerId: { name: passengerId, in: path, required: true, schema: { type: string, format: uuid } }
+    DriverId: { name: driverId, in: path, required: true, schema: { type: string, format: uuid } }
+    BookingId: { name: bookingId, in: path, required: true, schema: { type: string, format: uuid } }
+
+  responses:
+    Problem:
+      description: Erreur (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+
+    GeoPoint:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        label: { type: string, description: Adresse lisible }
+
+    NeedsProfile:
+      type: object
+      description: Besoins fonctionnels pour le trajet. Jamais de pathologie ni de diagnostic.
+      properties:
+        mobility:
+          type: string
+          enum: [NONE, CRUTCHES, WALKER, MANUAL_WHEELCHAIR_FOLDABLE, MANUAL_WHEELCHAIR_RIGID, POWER_WHEELCHAIR]
+        wheelchair:
+          type: object
+          properties:
+            widthCm: { type: integer }
+            lengthCm: { type: integer }
+            weightWithOccupantRange: { type: string, enum: [UNDER_100KG, KG_100_150, KG_150_200, OVER_200KG] }
+        transfer: { type: string, enum: [ALONE, WITH_HELP, IMPOSSIBLE] }
+        assistance:
+          type: array
+          items: { type: string, enum: [BOARDING_HELP, DOOR_TO_DOOR, LUGGAGE] }
+        sensory:
+          type: object
+          properties:
+            visuallyImpaired: { type: boolean }
+            hearingImpaired: { type: boolean }
+            preferredContact: { type: string, enum: [SMS, CALL, MESSAGE, SIGN_LANGUAGE] }
+        autonomy:
+          type: object
+          description: Autonomie et communication (déficience intellectuelle notamment)
+          properties:
+            travelsAlone: { type: boolean }
+            instructionsForDriver: { type: string, maxLength: 500 }
+            notifyContactOnPickupAndDropoff: { type: boolean }
+        assistanceAnimal: { type: boolean }
+        comfort:
+          type: array
+          items: { type: string, enum: [LEG_EXTENSION_SPACE, FRONT_SEAT, EXTRA_TIME] }
+        freeNote: { type: string, maxLength: 500 }
+
+    DriverSearchRequest:
+      type: object
+      required: [passengerId, pickup, dropoff, pickupAt]
+      properties:
+        passengerId: { type: string, format: uuid }
+        pickup: { $ref: '#/components/schemas/GeoPoint' }
+        dropoff: { $ref: '#/components/schemas/GeoPoint' }
+        pickupAt: { type: string, format: date-time, description: Au moins 12 h après la demande }
+        withWaiting:
+          type: object
+          description: Aller-retour avec attente, même chauffeur
+          properties:
+            waitMinutes: { type: integer, minimum: 0 }
+        companions: { type: integer, minimum: 0 }
+        sortBy: { type: string, enum: [PRICE, RATING, APPROACH_DISTANCE, CERTIFIED], default: PRICE }
+
+    DriverOffer:
+      type: object
+      properties:
+        driverId: { type: string, format: uuid }
+        displayName: { type: string }
+        certifiedPmr: { type: boolean }
+        rating: { $ref: '#/components/schemas/RatingSummary' }
+        vehicle: { $ref: '#/components/schemas/Vehicle' }
+        estimatedPrice: { $ref: '#/components/schemas/EstimatedPrice' }
+
+    EstimatedPrice:
+      type: object
+      description: Estimation calculée à partir de la grille du chauffeur ; payée directement au chauffeur.
+      properties:
+        currency: { type: string, const: EUR }
+        base: { type: number }
+        distancePart: { type: number }
+        durationPart: { type: number }
+        supplements: { type: number }
+        total: { type: number }
+
+    BookingRequest:
+      allOf:
+        - $ref: '#/components/schemas/DriverSearchRequest'
+        - type: object
+          required: [driverId]
+          properties:
+            driverId: { type: string, format: uuid }
+            bookerId: { type: string, format: uuid }
+
+    Booking:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [REQUESTED, ACCEPTED, REJECTED, EXPIRED, DRIVER_EN_ROUTE, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, CANCELLED_BY_PASSENGER, CANCELLED_BY_DRIVER]
+        passengerId: { type: string, format: uuid }
+        bookerId: { type: string, format: uuid }
+        driverId: { type: string, format: uuid }
+        pickup: { $ref: '#/components/schemas/GeoPoint' }
+        dropoff: { $ref: '#/components/schemas/GeoPoint' }
+        pickupAt: { type: string, format: date-time }
+        responseDeadline: { type: string, format: date-time, description: Demande + 1 h }
+        estimatedPrice: { $ref: '#/components/schemas/EstimatedPrice' }
+
+    Rating:
+      type: object
+      required: [overall]
+      properties:
+        overall: { type: integer, minimum: 1, maximum: 5 }
+        punctuality: { type: integer, minimum: 1, maximum: 5 }
+        assistanceQuality: { type: integer, minimum: 1, maximum: 5 }
+        equipmentCare: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 1000 }
+
+    RatingSummary:
+      type: object
+      properties:
+        overall: { type: number }
+        punctuality: { type: number }
+        assistanceQuality: { type: number }
+        equipmentCare: { type: number }
+        count: { type: integer }
+
+    Vehicle:
+      type: object
+      properties:
+        registration: { type: string }
+        type: { type: string, enum: [SEDAN, ESTATE, VAN, MINIBUS] }
+        ramp: { type: boolean }
+        tailLift: { type: boolean }
+        wheelchairSpots: { type: integer, minimum: 0 }
+        accessWidthCm: { type: integer }
+        accessHeightCm: { type: integer }
+        maxWheelchairWeightKg: { type: integer }
+        securingSystem: { type: boolean }
+        seats: { type: integer }
+
+    PriceGrid:
+      type: object
+      properties:
+        pickupFee: { type: number }
+        perKm: { type: number }
+        perMinute: { type: number }
+        waitingPerMinute: { type: number }
+        assistanceSupplement: { type: number }
+        companionFree: { type: boolean }
+        companionFee: { type: number }
+
+    Availability:
+      type: object
+      required: [dayOfWeek, start, end]
+      properties:
+        dayOfWeek: { type: string, enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY] }
+        start: { type: string, pattern: '^\d{2}:\d{2}$' }
+        end: { type: string, pattern: '^\d{2}:\d{2}$' }
+
+    DriverDocumentType:
+      type: string
+      enum: [VTC_CARD, VTC_REGISTRY_CERTIFICATE, INSURANCE, VEHICLE_REGISTRATION, PMR_TRAINING_CERTIFICATE]
