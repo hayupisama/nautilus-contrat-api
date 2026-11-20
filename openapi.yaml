@@ -1,24 +1,33 @@
 openapi: 3.1.0
 info:
   title: Nautilus API
-  version: 0.1.0
+  version: 0.2.0
   summary: API de réservation de VTC dédiée aux PMR (nom de code Nautilus)
   description: |
-    Brouillon issu du cahier des charges (section 8.3). Contract-first : ce fichier est la source
-    de vérité ; serveur Quarkus et clients Dart / TypeScript en sont générés.
+    Contract-first : ce fichier est la source de vérité ; le serveur Quarkus et les clients
+    Dart / TypeScript en sont générés.
+
+    Conventions : chemins en kebab-case anglais, schémas en PascalCase, propriétés en camelCase.
+    Les erreurs suivent la RFC 9457 (`application/problem+json`, voir le schéma `Problem`).
+    Les rôles autorisés sont listés par opération dans l'extension `x-nautilus-roles`.
+    Une ressource existante mais non visible pour l'appelant renvoie 404 (pas 403).
   license:
     name: PolyForm Noncommercial 1.0.0
     identifier: PolyForm-Noncommercial-1.0.0
 servers:
+  - url: http://localhost:8080/v1
+    description: Développement local
   - url: https://api.nautilus.example/v1
     description: Production (URL provisoire)
 security:
   - oidc: []
 tags:
+  - name: accounts
+    description: Compte de l'utilisateur connecté
   - name: needs-profiles
     description: Profils de besoins des passagers
   - name: drivers
-    description: Profil, véhicules, tarifs et justificatifs des chauffeurs
+    description: Profil, véhicules, tarifs, disponibilités, zone et justificatifs des chauffeurs
   - name: search
     description: Recherche de chauffeurs compatibles
   - name: bookings
@@ -27,6 +36,22 @@ tags:
     description: Back-office administrateur
 
 paths:
+  /me:
+    get:
+      tags: [accounts]
+      operationId: getCurrentAccount
+      summary: Lire le compte de l'utilisateur connecté
+      description: Crée le compte à la première connexion.
+      x-nautilus-roles: [PASSENGER, BOOKER, DRIVER, ADMIN]
+      responses:
+        '200':
+          description: Compte courant
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /passengers/{passengerId}/needs-profile:
     parameters:
       - $ref: '#/components/parameters/PassengerId'
@@ -34,17 +59,21 @@ paths:
       tags: [needs-profiles]
       operationId: getNeedsProfile
       summary: Lire le profil de besoins d'un passager
+      x-nautilus-roles: [PASSENGER, BOOKER]
       responses:
         '200':
           description: Profil de besoins
           content:
             application/json:
               schema: { $ref: '#/components/schemas/NeedsProfile' }
-        '404': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [needs-profiles]
       operationId: updateNeedsProfile
       summary: Créer ou modifier le profil de besoins d'un passager
+      x-nautilus-roles: [PASSENGER, BOOKER]
       requestBody:
         required: true
         content:
@@ -56,13 +85,18 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/NeedsProfile' }
-        '400': { $ref: '#/components/responses/Problem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /driver-searches:
     post:
       tags: [search]
       operationId: searchDrivers
       summary: Chercher les chauffeurs compatibles pour un trajet et un créneau
+      description: Une liste vide signifie qu'aucun chauffeur n'est compatible ; la demande non servie est enregistrée côté serveur.
+      x-nautilus-roles: [PASSENGER, BOOKER]
       requestBody:
         required: true
         content:
@@ -76,13 +110,18 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/DriverOffer' }
-        '400': { $ref: '#/components/responses/Problem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableContent' }
 
   /bookings:
     post:
       tags: [bookings]
       operationId: createBooking
       summary: Envoyer une demande de réservation à un chauffeur
+      x-nautilus-roles: [PASSENGER, BOOKER]
       requestBody:
         required: true
         content:
@@ -91,11 +130,18 @@ paths:
       responses:
         '201':
           description: Demande créée (statut REQUESTED)
+          headers:
+            Location:
+              description: URL de la réservation créée
+              schema: { type: string, format: uri-reference }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Booking' }
-        '400': { $ref: '#/components/responses/Problem' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableContent' }
 
   /bookings/{bookingId}:
     parameters:
@@ -104,13 +150,68 @@ paths:
       tags: [bookings]
       operationId: getBooking
       summary: Lire une réservation
+      x-nautilus-roles: [PASSENGER, BOOKER, DRIVER, ADMIN]
       responses:
         '200':
           description: Réservation
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Booking' }
-        '404': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /passengers/{passengerId}/bookings:
+    parameters:
+      - $ref: '#/components/parameters/PassengerId'
+    get:
+      tags: [bookings]
+      operationId: listPassengerBookings
+      summary: Lister les réservations d'un passager
+      description: Tri par heure de prise en charge croissante.
+      x-nautilus-roles: [PASSENGER, BOOKER]
+      parameters:
+        - $ref: '#/components/parameters/BookingStatusFilter'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Page de réservations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /drivers/{driverId}/bookings:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+    get:
+      tags: [bookings]
+      operationId: listDriverBookings
+      summary: Lister les réservations adressées à un chauffeur
+      description: Tri par heure de prise en charge croissante.
+      x-nautilus-roles: [DRIVER]
+      parameters:
+        - $ref: '#/components/parameters/BookingStatusFilter'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Page de réservations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /bookings/{bookingId}/acceptance:
     parameters:
@@ -118,14 +219,18 @@ paths:
     post:
       tags: [bookings]
       operationId: acceptBooking
-      summary: Le chauffeur accepte la demande
+      summary: Accepter une demande de réservation
+      x-nautilus-roles: [DRIVER]
       responses:
         '200':
           description: Réservation acceptée
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Booking' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /bookings/{bookingId}/rejection:
     parameters:
@@ -133,14 +238,18 @@ paths:
     post:
       tags: [bookings]
       operationId: rejectBooking
-      summary: Le chauffeur refuse la demande
+      summary: Refuser une demande de réservation
+      x-nautilus-roles: [DRIVER]
       responses:
         '200':
           description: Réservation refusée
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Booking' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /bookings/{bookingId}/status:
     parameters:
@@ -148,25 +257,24 @@ paths:
     post:
       tags: [bookings]
       operationId: updateBookingStatus
-      summary: Faire avancer le statut de la course (chauffeur)
+      summary: Faire avancer le statut de la course
+      x-nautilus-roles: [DRIVER]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [status]
-              properties:
-                status:
-                  type: string
-                  enum: [DRIVER_EN_ROUTE, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED]
+            schema: { $ref: '#/components/schemas/BookingStatusChange' }
       responses:
         '200':
           description: Statut mis à jour
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Booking' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /bookings/{bookingId}/cancellation:
     parameters:
@@ -174,21 +282,23 @@ paths:
     post:
       tags: [bookings]
       operationId: cancelBooking
-      summary: Annuler une réservation (passager, réservant ou chauffeur)
+      summary: Annuler une réservation
+      x-nautilus-roles: [PASSENGER, BOOKER, DRIVER]
       requestBody:
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                reason: { type: string, maxLength: 500 }
+            schema: { $ref: '#/components/schemas/BookingCancellation' }
       responses:
         '200':
           description: Réservation annulée
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Booking' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /bookings/{bookingId}/rating:
     parameters:
@@ -197,6 +307,8 @@ paths:
       tags: [bookings]
       operationId: rateBooking
       summary: Noter une course terminée
+      description: Implémentation prévue au lot 1 ; contrat conservé dès maintenant.
+      x-nautilus-roles: [PASSENGER, BOOKER]
       requestBody:
         required: true
         content:
@@ -204,15 +316,75 @@ paths:
             schema: { $ref: '#/components/schemas/Rating' }
       responses:
         '201': { description: Note enregistrée }
-        '409': { $ref: '#/components/responses/Problem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /drivers/{driverId}/profile:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+    get:
+      tags: [drivers]
+      operationId: getDriverProfile
+      summary: Lire le profil d'un chauffeur
+      x-nautilus-roles: [DRIVER, ADMIN]
+      responses:
+        '200':
+          description: Profil du chauffeur
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [drivers]
+      operationId: updateDriverProfile
+      summary: Modifier le profil du chauffeur
+      description: Les champs de validation sont en lecture seule.
+      x-nautilus-roles: [DRIVER]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DriverProfile' }
+      responses:
+        '200':
+          description: Profil enregistré
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /drivers/{driverId}/vehicles:
     parameters:
       - $ref: '#/components/parameters/DriverId'
+    get:
+      tags: [drivers]
+      operationId: listDriverVehicles
+      summary: Lister les véhicules et équipements du chauffeur
+      x-nautilus-roles: [DRIVER, ADMIN]
+      responses:
+        '200':
+          description: Véhicules du chauffeur
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Vehicle' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [drivers]
       operationId: replaceDriverVehicles
       summary: Déclarer les véhicules et équipements du chauffeur
+      x-nautilus-roles: [DRIVER]
       requestBody:
         required: true
         content:
@@ -221,32 +393,80 @@ paths:
               type: array
               items: { $ref: '#/components/schemas/Vehicle' }
       responses:
-        '200': { description: Véhicules enregistrés }
-        '400': { $ref: '#/components/responses/Problem' }
+        '200':
+          description: Véhicules enregistrés
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Vehicle' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /drivers/{driverId}/price-grid:
     parameters:
       - $ref: '#/components/parameters/DriverId'
+    get:
+      tags: [drivers]
+      operationId: getPriceGrid
+      summary: Lire la grille tarifaire du chauffeur
+      x-nautilus-roles: [DRIVER, ADMIN]
+      responses:
+        '200':
+          description: Grille tarifaire
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceGrid' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [drivers]
       operationId: updatePriceGrid
       summary: Définir la grille tarifaire du chauffeur
+      x-nautilus-roles: [DRIVER]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/PriceGrid' }
       responses:
-        '200': { description: Grille enregistrée }
-        '400': { $ref: '#/components/responses/Problem' }
+        '200':
+          description: Grille enregistrée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceGrid' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /drivers/{driverId}/availabilities:
     parameters:
       - $ref: '#/components/parameters/DriverId'
+    get:
+      tags: [drivers]
+      operationId: listAvailabilities
+      summary: Lister les disponibilités hebdomadaires du chauffeur
+      x-nautilus-roles: [DRIVER, ADMIN]
+      responses:
+        '200':
+          description: Disponibilités du chauffeur
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Availability' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [drivers]
       operationId: replaceAvailabilities
       summary: Définir les disponibilités hebdomadaires du chauffeur
+      x-nautilus-roles: [DRIVER]
       requestBody:
         required: true
         content:
@@ -255,30 +475,146 @@ paths:
               type: array
               items: { $ref: '#/components/schemas/Availability' }
       responses:
-        '200': { description: Disponibilités enregistrées }
-        '400': { $ref: '#/components/responses/Problem' }
+        '200':
+          description: Disponibilités enregistrées
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Availability' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableContent' }
+
+  /drivers/{driverId}/service-area:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+    get:
+      tags: [drivers]
+      operationId: getServiceArea
+      summary: Lire la zone d'intervention du chauffeur
+      x-nautilus-roles: [DRIVER, ADMIN]
+      responses:
+        '200':
+          description: Zone d'intervention
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceArea' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [drivers]
+      operationId: updateServiceArea
+      summary: Définir la zone d'intervention du chauffeur
+      x-nautilus-roles: [DRIVER]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceArea' }
+      responses:
+        '200':
+          description: Zone enregistrée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceArea' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /drivers/{driverId}/documents:
     parameters:
       - $ref: '#/components/parameters/DriverId'
+    get:
+      tags: [drivers]
+      operationId: listDriverDocuments
+      summary: Lister les justificatifs du chauffeur
+      x-nautilus-roles: [DRIVER, ADMIN]
+      responses:
+        '200':
+          description: Justificatifs du chauffeur
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DriverDocument' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     post:
       tags: [drivers]
       operationId: uploadDriverDocument
       summary: Déposer un justificatif
+      description: Fichier PDF, JPEG ou PNG de 10 Mo maximum.
+      x-nautilus-roles: [DRIVER]
       requestBody:
         required: true
         content:
           multipart/form-data:
-            schema:
-              type: object
-              required: [type, file]
-              properties:
-                type: { $ref: '#/components/schemas/DriverDocumentType' }
-                expiresOn: { type: string, format: date }
-                file: { type: string, contentMediaType: application/octet-stream }
+            schema: { $ref: '#/components/schemas/DriverDocumentUpload' }
       responses:
-        '201': { description: 'Justificatif déposé, en attente de validation' }
-        '400': { $ref: '#/components/responses/Problem' }
+        '201':
+          description: Justificatif déposé, en attente de validation
+          headers:
+            Location:
+              description: URL du justificatif créé
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverDocument' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /drivers/{driverId}/documents/{documentId}/file:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      tags: [drivers]
+      operationId: downloadDriverDocument
+      summary: Télécharger le fichier d'un justificatif
+      x-nautilus-roles: [DRIVER, ADMIN]
+      responses:
+        '200':
+          description: Contenu du justificatif
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/drivers:
+    get:
+      tags: [admin]
+      operationId: listDriversForAdmin
+      summary: Lister les chauffeurs, notamment ceux à valider
+      x-nautilus-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/ValidationStatusFilter'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Page de chauffeurs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverSummaryPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /admin/drivers/{driverId}/validation:
     parameters:
@@ -286,49 +622,218 @@ paths:
     post:
       tags: [admin]
       operationId: validateDriver
-      summary: Valider ou refuser un chauffeur (action journalisée)
+      summary: Valider, refuser ou suspendre un chauffeur
+      description: Action journalisée ; le motif est obligatoire.
+      x-nautilus-roles: [ADMIN]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [decision, reason]
-              properties:
-                decision: { type: string, enum: [APPROVED, REJECTED, SUSPENDED] }
-                reason: { type: string, maxLength: 1000 }
+            schema: { $ref: '#/components/schemas/DriverValidationDecision' }
       responses:
-        '200': { description: Décision enregistrée }
-        '400': { $ref: '#/components/responses/Problem' }
+        '200':
+          description: Décision enregistrée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/bookings:
+    get:
+      tags: [admin]
+      operationId: listBookingsForAdmin
+      summary: Lister toutes les réservations
+      description: Tri par heure de prise en charge croissante.
+      x-nautilus-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/BookingStatusFilter'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Page de réservations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
 components:
   securitySchemes:
     oidc:
       type: openIdConnect
-      openIdConnectUrl: https://auth.nautilus.example/realms/nautilus/.well-known/openid-configuration
+      openIdConnectUrl: http://localhost:8180/realms/nautilus/.well-known/openid-configuration
+      description: |
+        Authentification OpenID Connect portée par Keycloak (hors de cette API, qui est un serveur
+        de ressources recevant un jeton Bearer). Les applications (clients publics) utilisent le flux
+        Authorization Code avec PKCE (méthode S256). Rôles de royaume : `passenger`, `booker`,
+        `driver`, `admin` (cumulables, ex. passager et réservant).
 
   parameters:
     PassengerId: { name: passengerId, in: path, required: true, schema: { type: string, format: uuid } }
     DriverId: { name: driverId, in: path, required: true, schema: { type: string, format: uuid } }
     BookingId: { name: bookingId, in: path, required: true, schema: { type: string, format: uuid } }
+    DocumentId: { name: documentId, in: path, required: true, schema: { type: string, format: uuid } }
+    Page:
+      name: page
+      in: query
+      description: Numéro de page, à partir de 0
+      schema: { type: integer, minimum: 0, default: 0 }
+    Size:
+      name: size
+      in: query
+      description: Taille de page
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    BookingStatusFilter:
+      name: status
+      in: query
+      description: Filtre sur le statut (répétable)
+      style: form
+      explode: true
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/BookingStatus' }
+    From:
+      name: from
+      in: query
+      description: Heure de prise en charge minimale (incluse)
+      schema: { type: string, format: date-time }
+    To:
+      name: to
+      in: query
+      description: Heure de prise en charge maximale (exclue)
+      schema: { type: string, format: date-time }
+    ValidationStatusFilter:
+      name: validationStatus
+      in: query
+      description: Filtre sur le statut de validation du chauffeur
+      schema: { $ref: '#/components/schemas/DriverValidationStatus' }
 
   responses:
-    Problem:
-      description: Erreur (RFC 9457)
+    BadRequest:
+      description: Requête invalide (format ou schéma), type `validation-error`
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Non authentifié, type `unauthenticated`
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Rôle insuffisant, type `forbidden`
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Ressource introuvable ou non visible pour l'appelant, type `not-found`
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Transition d'état impossible (`invalid-status-transition`, `response-deadline-passed`, `rating-already-exists`)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PayloadTooLarge:
+      description: Fichier trop volumineux, type `file-too-large`
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnsupportedMediaType:
+      description: Type de fichier non accepté, type `unsupported-file-type`
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnprocessableContent:
+      description: Règle métier violée (`booking-too-soon`, `driver-not-compatible`, `driver-not-available`, `driver-not-approved`, `availability-overlap`)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
 
   schemas:
+    # ----- Erreurs -----
     Problem:
       type: object
+      description: |
+        Erreur au format RFC 9457. `type` est un URN stable `urn:nautilus:problem:<code>`.
+        Codes : `validation-error` (400), `unauthenticated` (401), `forbidden` (403), `not-found` (404),
+        `booking-too-soon`, `driver-not-compatible`, `driver-not-available`, `driver-not-approved`,
+        `availability-overlap` (422), `invalid-status-transition`, `response-deadline-passed`,
+        `rating-already-exists` (409), `file-too-large` (413), `unsupported-file-type` (415).
+      required: [type, title, status]
       properties:
-        type: { type: string, format: uri }
+        type: { type: string, format: uri, example: 'urn:nautilus:problem:validation-error' }
         title: { type: string }
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
+        errors:
+          type: array
+          description: Détail des champs invalides (400)
+          items: { $ref: '#/components/schemas/FieldError' }
 
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field: { type: string }
+        message: { type: string }
+
+    # ----- Comptes -----
+    Role:
+      type: string
+      enum: [PASSENGER, BOOKER, DRIVER, ADMIN]
+
+    PassengerSummary:
+      type: object
+      required: [id, displayName]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+
+    Account:
+      type: object
+      required: [id, roles, displayName]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/Role' }
+        displayName: { type: string }
+        passengerId:
+          type: string
+          format: uuid
+          description: Présent si le compte a le rôle PASSENGER
+        driverId:
+          type: string
+          format: uuid
+          description: Présent si le compte a le rôle DRIVER
+        managedPassengers:
+          type: array
+          description: |
+            Passagers que le compte peut réserver (rôle BOOKER ; inclut le compte lui-même s'il est
+            aussi PASSENGER). Au lot 0, les passagers gérés viennent du jeu de données fictives.
+          items: { $ref: '#/components/schemas/PassengerSummary' }
+
+    PassengerContact:
+      type: object
+      description: |
+        Coordonnées du passager, exposées au chauffeur uniquement après acceptation de la demande
+        (minimisation des données). Isolé dans ce schéma pour qu'un changement de règle reste local.
+      required: [displayName, phone]
+      properties:
+        displayName: { type: string }
+        phone: { type: string }
+        preferredContact: { $ref: '#/components/schemas/PreferredContact' }
+
+    # ----- Géographie -----
     GeoPoint:
       type: object
       required: [latitude, longitude]
@@ -337,41 +842,104 @@ components:
         longitude: { type: number, minimum: -180, maximum: 180 }
         label: { type: string, description: Adresse lisible }
 
+    ServiceAreaGeometryType:
+      type: string
+      description: "Lot 0 limité à Polygon (MultiPolygon exigerait un niveau d'imbrication de plus, ajout ultérieur non cassant)"
+      enum: [Polygon]
+
+    ServiceArea:
+      type: object
+      description: |
+        Zone d'intervention en géométrie GeoJSON Polygon (WGS 84, longitude puis latitude). Valeur par défaut
+        côté serveur : Nantes Métropole, aéroport et gare.
+      required: [type, coordinates]
+      properties:
+        type: { $ref: '#/components/schemas/ServiceAreaGeometryType' }
+        coordinates:
+          type: array
+          description: "Coordonnées GeoJSON d'un Polygon (anneaux de positions longitude, latitude)"
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: number
+
+    # ----- Profil de besoins -----
+    MobilityType:
+      type: string
+      enum: [NONE, CRUTCHES, WALKER, MANUAL_WHEELCHAIR_FOLDABLE, MANUAL_WHEELCHAIR_RIGID, POWER_WHEELCHAIR]
+
+    WheelchairWeightRange:
+      type: string
+      enum: [UNDER_100KG, KG_100_150, KG_150_200, OVER_200KG]
+
+    TransferAbility:
+      type: string
+      enum: [ALONE, WITH_HELP, IMPOSSIBLE]
+
+    AssistanceType:
+      type: string
+      enum: [BOARDING_HELP, DOOR_TO_DOOR, LUGGAGE]
+
+    PreferredContact:
+      type: string
+      enum: [SMS, CALL, MESSAGE, SIGN_LANGUAGE]
+
+    ComfortNeed:
+      type: string
+      enum: [LEG_EXTENSION_SPACE, FRONT_SEAT, EXTRA_TIME]
+
+    WheelchairSpec:
+      type: object
+      properties:
+        widthCm: { type: integer, minimum: 0 }
+        lengthCm: { type: integer, minimum: 0 }
+        weightWithOccupantRange: { $ref: '#/components/schemas/WheelchairWeightRange' }
+
+    SensoryNeeds:
+      type: object
+      properties:
+        visuallyImpaired: { type: boolean }
+        hearingImpaired: { type: boolean }
+        preferredContact: { $ref: '#/components/schemas/PreferredContact' }
+
+    AutonomyNeeds:
+      type: object
+      description: Autonomie et communication (besoin fonctionnel, jamais un diagnostic)
+      properties:
+        travelsAlone: { type: boolean }
+        instructionsForDriver: { type: string, maxLength: 500 }
+        notifyContactOnPickupAndDropoff: { type: boolean }
+
     NeedsProfile:
       type: object
       description: Besoins fonctionnels pour le trajet. Jamais de pathologie ni de diagnostic.
       properties:
-        mobility:
-          type: string
-          enum: [NONE, CRUTCHES, WALKER, MANUAL_WHEELCHAIR_FOLDABLE, MANUAL_WHEELCHAIR_RIGID, POWER_WHEELCHAIR]
-        wheelchair:
-          type: object
-          properties:
-            widthCm: { type: integer }
-            lengthCm: { type: integer }
-            weightWithOccupantRange: { type: string, enum: [UNDER_100KG, KG_100_150, KG_150_200, OVER_200KG] }
-        transfer: { type: string, enum: [ALONE, WITH_HELP, IMPOSSIBLE] }
+        mobility: { $ref: '#/components/schemas/MobilityType' }
+        wheelchair: { $ref: '#/components/schemas/WheelchairSpec' }
+        transfer: { $ref: '#/components/schemas/TransferAbility' }
         assistance:
           type: array
-          items: { type: string, enum: [BOARDING_HELP, DOOR_TO_DOOR, LUGGAGE] }
-        sensory:
-          type: object
-          properties:
-            visuallyImpaired: { type: boolean }
-            hearingImpaired: { type: boolean }
-            preferredContact: { type: string, enum: [SMS, CALL, MESSAGE, SIGN_LANGUAGE] }
-        autonomy:
-          type: object
-          description: Autonomie et communication (déficience intellectuelle notamment)
-          properties:
-            travelsAlone: { type: boolean }
-            instructionsForDriver: { type: string, maxLength: 500 }
-            notifyContactOnPickupAndDropoff: { type: boolean }
+          items: { $ref: '#/components/schemas/AssistanceType' }
+        sensory: { $ref: '#/components/schemas/SensoryNeeds' }
+        autonomy: { $ref: '#/components/schemas/AutonomyNeeds' }
         assistanceAnimal: { type: boolean }
         comfort:
           type: array
-          items: { type: string, enum: [LEG_EXTENSION_SPACE, FRONT_SEAT, EXTRA_TIME] }
+          items: { $ref: '#/components/schemas/ComfortNeed' }
         freeNote: { type: string, maxLength: 500 }
+
+    # ----- Recherche -----
+    SortCriterion:
+      type: string
+      enum: [PRICE, RATING, APPROACH_DISTANCE, CERTIFIED]
+
+    WaitingOption:
+      type: object
+      description: Aller-retour avec attente, même chauffeur
+      properties:
+        waitMinutes: { type: integer, minimum: 0 }
 
     DriverSearchRequest:
       type: object
@@ -381,16 +949,13 @@ components:
         pickup: { $ref: '#/components/schemas/GeoPoint' }
         dropoff: { $ref: '#/components/schemas/GeoPoint' }
         pickupAt: { type: string, format: date-time, description: Au moins 12 h après la demande }
-        withWaiting:
-          type: object
-          description: Aller-retour avec attente, même chauffeur
-          properties:
-            waitMinutes: { type: integer, minimum: 0 }
+        withWaiting: { $ref: '#/components/schemas/WaitingOption' }
         companions: { type: integer, minimum: 0 }
-        sortBy: { type: string, enum: [PRICE, RATING, APPROACH_DISTANCE, CERTIFIED], default: PRICE }
+        sortBy: { $ref: '#/components/schemas/SortCriterion' }
 
     DriverOffer:
       type: object
+      required: [driverId, displayName, estimatedPrice]
       properties:
         driverId: { type: string, format: uuid }
         displayName: { type: string }
@@ -399,42 +964,100 @@ components:
         vehicle: { $ref: '#/components/schemas/Vehicle' }
         estimatedPrice: { $ref: '#/components/schemas/EstimatedPrice' }
 
+    Currency:
+      type: string
+      enum: [EUR]
+
     EstimatedPrice:
       type: object
-      description: Estimation calculée à partir de la grille du chauffeur ; payée directement au chauffeur.
+      description: |
+        Estimation calculée par le serveur à partir de la grille du chauffeur ; payée directement
+        au chauffeur. Montants en euros (le calcul reste serveur, les clients affichent seulement).
+      required: [currency, total]
       properties:
-        currency: { type: string, const: EUR }
-        base: { type: number }
-        distancePart: { type: number }
-        durationPart: { type: number }
-        supplements: { type: number }
-        total: { type: number }
+        currency: { $ref: '#/components/schemas/Currency' }
+        base: { type: number, minimum: 0, multipleOf: 0.01 }
+        distancePart: { type: number, minimum: 0, multipleOf: 0.01 }
+        durationPart: { type: number, minimum: 0, multipleOf: 0.01 }
+        supplements: { type: number, minimum: 0, multipleOf: 0.01 }
+        total: { type: number, minimum: 0, multipleOf: 0.01 }
+
+    # ----- Réservations -----
+    BookingStatus:
+      type: string
+      enum: [REQUESTED, ACCEPTED, REJECTED, EXPIRED, DRIVER_EN_ROUTE, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, CANCELLED_BY_PASSENGER, CANCELLED_BY_DRIVER]
+
+    BookingProgressStatus:
+      type: string
+      description: Statuts que le chauffeur peut faire avancer
+      enum: [DRIVER_EN_ROUTE, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED]
+
+    BookingStatusChange:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/BookingProgressStatus' }
+
+    BookingCancellation:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 500 }
 
     BookingRequest:
-      allOf:
-        - $ref: '#/components/schemas/DriverSearchRequest'
-        - type: object
-          required: [driverId]
-          properties:
-            driverId: { type: string, format: uuid }
-            bookerId: { type: string, format: uuid }
+      type: object
+      description: |
+        Demande de réservation. Le réservant (`bookerId`) est déduit du jeton, jamais fourni.
+        Reprend explicitement les champs de `DriverSearchRequest` (pas d'héritage).
+      required: [driverId, passengerId, pickup, dropoff, pickupAt]
+      properties:
+        driverId: { type: string, format: uuid }
+        passengerId: { type: string, format: uuid }
+        pickup: { $ref: '#/components/schemas/GeoPoint' }
+        dropoff: { $ref: '#/components/schemas/GeoPoint' }
+        pickupAt: { type: string, format: date-time, description: Au moins 12 h après la demande }
+        withWaiting: { $ref: '#/components/schemas/WaitingOption' }
+        companions: { type: integer, minimum: 0 }
+        comment: { type: string, maxLength: 500 }
 
     Booking:
       type: object
+      required: [id, status, passengerId, driverId, pickup, dropoff, pickupAt, createdAt, updatedAt]
       properties:
-        id: { type: string, format: uuid }
-        status:
-          type: string
-          enum: [REQUESTED, ACCEPTED, REJECTED, EXPIRED, DRIVER_EN_ROUTE, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, CANCELLED_BY_PASSENGER, CANCELLED_BY_DRIVER]
-        passengerId: { type: string, format: uuid }
-        bookerId: { type: string, format: uuid }
-        driverId: { type: string, format: uuid }
+        id: { type: string, format: uuid, readOnly: true }
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        passengerId: { type: string, format: uuid, readOnly: true }
+        bookerId: { type: string, format: uuid, readOnly: true }
+        driverId: { type: string, format: uuid, readOnly: true }
+        passengerDisplayName: { type: string, readOnly: true }
+        driverDisplayName: { type: string, readOnly: true }
         pickup: { $ref: '#/components/schemas/GeoPoint' }
         dropoff: { $ref: '#/components/schemas/GeoPoint' }
         pickupAt: { type: string, format: date-time }
-        responseDeadline: { type: string, format: date-time, description: Demande + 1 h }
+        withWaiting: { $ref: '#/components/schemas/WaitingOption' }
+        companions: { type: integer, minimum: 0 }
+        comment: { type: string, maxLength: 500 }
+        responseDeadline: { type: string, format: date-time, readOnly: true, description: Demande + 1 h }
         estimatedPrice: { $ref: '#/components/schemas/EstimatedPrice' }
+        needsProfile: { $ref: '#/components/schemas/NeedsProfile' }
+        passengerContact: { $ref: '#/components/schemas/PassengerContact' }
+        lateCancellation: { type: boolean, readOnly: true }
+        cancellationReason: { type: string, readOnly: true }
+        createdAt: { type: string, format: date-time, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
 
+    BookingPage:
+      type: object
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Booking' }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1 }
+        totalItems: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+
+    # ----- Notes -----
     Rating:
       type: object
       required: [overall]
@@ -454,39 +1077,137 @@ components:
         equipmentCare: { type: number }
         count: { type: integer }
 
+    # ----- Chauffeurs -----
+    VehicleType:
+      type: string
+      enum: [SEDAN, ESTATE, VAN, MINIBUS]
+
     Vehicle:
       type: object
+      required: [registration, type]
       properties:
+        id: { type: string, format: uuid, readOnly: true }
         registration: { type: string }
-        type: { type: string, enum: [SEDAN, ESTATE, VAN, MINIBUS] }
+        type: { $ref: '#/components/schemas/VehicleType' }
         ramp: { type: boolean }
         tailLift: { type: boolean }
         wheelchairSpots: { type: integer, minimum: 0 }
-        accessWidthCm: { type: integer }
-        accessHeightCm: { type: integer }
-        maxWheelchairWeightKg: { type: integer }
+        accessWidthCm: { type: integer, minimum: 0 }
+        accessHeightCm: { type: integer, minimum: 0 }
+        maxWheelchairWeightKg: { type: integer, minimum: 0 }
         securingSystem: { type: boolean }
-        seats: { type: integer }
+        seats: { type: integer, minimum: 0 }
 
     PriceGrid:
       type: object
+      description: Tarifs du chauffeur en euros.
       properties:
-        pickupFee: { type: number }
-        perKm: { type: number }
-        perMinute: { type: number }
-        waitingPerMinute: { type: number }
-        assistanceSupplement: { type: number }
+        pickupFee: { type: number, minimum: 0, multipleOf: 0.01 }
+        perKm: { type: number, minimum: 0, multipleOf: 0.01 }
+        perMinute: { type: number, minimum: 0, multipleOf: 0.01 }
+        waitingPerMinute: { type: number, minimum: 0, multipleOf: 0.01 }
+        assistanceSupplement: { type: number, minimum: 0, multipleOf: 0.01 }
         companionFree: { type: boolean }
-        companionFee: { type: number }
+        companionFee: { type: number, minimum: 0, multipleOf: 0.01 }
+
+    DayOfWeek:
+      type: string
+      enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY]
 
     Availability:
       type: object
+      description: Créneau hebdomadaire, heures `HH:mm` en heure locale Europe/Paris.
       required: [dayOfWeek, start, end]
       properties:
-        dayOfWeek: { type: string, enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY] }
+        dayOfWeek: { $ref: '#/components/schemas/DayOfWeek' }
         start: { type: string, pattern: '^\d{2}:\d{2}$' }
         end: { type: string, pattern: '^\d{2}:\d{2}$' }
+
+    DriverValidationStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
+
+    ValidationDecision:
+      type: string
+      enum: [APPROVED, REJECTED, SUSPENDED]
+
+    DriverValidationDecision:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { $ref: '#/components/schemas/ValidationDecision' }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+
+    DriverProfile:
+      type: object
+      required: [displayName]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        displayName: { type: string }
+        offeredAssistance:
+          type: array
+          items: { $ref: '#/components/schemas/AssistanceType' }
+        offersTransferHelp: { type: boolean }
+        acceptsAssistanceAnimals: { type: boolean }
+        signLanguage: { type: boolean }
+        trainings:
+          type: array
+          maxItems: 20
+          items: { type: string, maxLength: 200 }
+        validationStatus: { $ref: '#/components/schemas/DriverValidationStatus' }
+        certifiedPmr:
+          type: boolean
+          readOnly: true
+          description: Toujours false au lot 0
+        vtcCardNumber: { type: string }
+        vtcRegistryNumber: { type: string }
+
+    DriverSummary:
+      type: object
+      required: [id, displayName, validationStatus, pendingDocuments, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        validationStatus: { $ref: '#/components/schemas/DriverValidationStatus' }
+        pendingDocuments: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+
+    DriverSummaryPage:
+      type: object
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DriverSummary' }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1 }
+        totalItems: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
 
     DriverDocumentType:
       type: string
       enum: [VTC_CARD, VTC_REGISTRY_CERTIFICATE, INSURANCE, VEHICLE_REGISTRATION, PMR_TRAINING_CERTIFICATE]
+
+    DriverDocumentStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, EXPIRED]
+
+    DriverDocumentUpload:
+      type: object
+      required: [type, file]
+      properties:
+        type: { $ref: '#/components/schemas/DriverDocumentType' }
+        expiresOn: { type: string, format: date }
+        file: { type: string, format: binary }
+
+    DriverDocument:
+      type: object
+      required: [id, type, status, fileName, mediaType, uploadedAt]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        type: { $ref: '#/components/schemas/DriverDocumentType' }
+        status: { $ref: '#/components/schemas/DriverDocumentStatus' }
+        expiresOn: { type: string, format: date }
+        fileName: { type: string, readOnly: true }
+        mediaType: { type: string, readOnly: true }
+        uploadedAt: { type: string, format: date-time, readOnly: true }
