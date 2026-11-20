@@ -7,7 +7,7 @@ interfaces JAX-RS (nautilus-api), client Dart (nautilus-flutter-commun), client 
 
 ## État
 
-Brouillon v0.1.0 issu du cahier des charges (section 8.3). À compléter au fil du lot 0.
+Version 0.2.0 (lot 0), conception : `docs/conception-v0.2.0.md`.
 
 ## Règles
 
