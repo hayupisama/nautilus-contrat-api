@@ -1,0 +1,18 @@
+{
+  "name": "nautilus-contrat-api",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Contrat OpenAPI de l'API Nautilus (outillage de validation et de génération)",
+  "license": "SEE LICENSE IN LICENSE",
+  "scripts": {
+    "lint": "redocly lint openapi.yaml",
+    "generate:dart": "openapi-generator-cli generate -g dart-dio -i openapi.yaml -o generated/dart",
+    "generate:ts": "openapi-generator-cli generate -g typescript-angular -i openapi.yaml -o generated/ts",
+    "generate:jaxrs": "openapi-generator-cli generate -g jaxrs-spec -i openapi.yaml -o generated/jaxrs --additional-properties=interfaceOnly=true,useJakartaEe=true,returnResponse=false",
+    "generate:check": "npm run generate:dart && npm run generate:ts && npm run generate:jaxrs && node scripts/check-generated.mjs"
+  },
+  "devDependencies": {
+    "@openapitools/openapi-generator-cli": "2.42.2",
+    "@redocly/cli": "2.82.0"
+  }
+}

@@ -1,0 +1,20 @@
+extends:
+  - recommended-strict
+
+rules:
+  operation-4xx-problem-details-rfc7807: error
+  paths-kebab-case: error
+  operation-summary: error
+  operation-operationId-unique: error
+  tag-description: error
+  # Le serveur local (localhost) est voulu : contrat de développement (conception section 3).
+  no-server-example.com: off
+  rule/operation-roles:
+    subject:
+      type: Operation
+      property: x-nautilus-roles
+    assertions:
+      defined: true
+      nonEmpty: true
+    message: Chaque opération doit déclarer x-nautilus-roles.
+    severity: error
