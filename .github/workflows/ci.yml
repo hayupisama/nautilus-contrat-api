@@ -88,7 +88,20 @@ jobs:
           java-version: '21'
       - run: npm ci
       - name: Vérifier les versions (tag, info.version, package.json)
-        run: node scripts/check-version.mjs
+        shell: node {0}
+        run: |
+          // Inline : le tag cible peut ne pas contenir de script d'outillage.
+          const { readFileSync } = require('node:fs');
+          const yaml = readFileSync('openapi.yaml', 'utf8');
+          const info = /^info:\s*\r?\n((?:[ \t]+.*\r?\n|[ \t]*\r?\n)*)/m.exec(yaml);
+          const m = info && /^[ \t]+version:[ \t]*(?:"([^"]+)"|'([^']+)'|([^\s#'"]+))/m.exec(info[1]);
+          const api = m && (m[1] ?? m[2] ?? m[3]);
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8')).version;
+          const tag = process.env.TAG;
+          if (!api) { console.error('info.version introuvable.'); process.exit(1); }
+          if (pkg !== api) { console.error(`package.json (${pkg}) et info.version (${api}) divergent.`); process.exit(1); }
+          if (tag !== `v${api}`) { console.error(`Le tag ${tag} ne correspond pas a info.version (${api}).`); process.exit(1); }
+          console.log(`Version du contrat : ${api}`);
       - name: Générer les clients Dart et TypeScript
         run: |
           npm run generate:dart
