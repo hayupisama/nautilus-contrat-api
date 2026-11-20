@@ -17,6 +17,24 @@ npm run lint             # Redocly : 0 erreur, 0 avertissement attendu
 npm run generate:check   # génère dart-dio, typescript-angular, jaxrs-spec dans generated/ (ignoré par git)
 ```
 
+## Intégration continue
+
+Le workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) s'exécute sur chaque pull request et sur `main` :
+`npm run lint` puis `npm run generate:check`. Sur un tag `vX.Y.Z`, il vérifie que le tag égale `info.version`,
+génère les clients Dart (`dart-dio`) et TypeScript Angular, puis crée une release GitHub qui contient
+`nautilus-client-dart-vX.Y.Z.zip`, `nautilus-client-typescript-angular-vX.Y.Z.zip` et `openapi-vX.Y.Z.yaml`.
+Aucun secret n'est requis (jeton `GITHUB_TOKEN` fourni par GitHub). Les actions sont épinglées par SHA.
+
+## Monter de version
+
+1. Créer une branche `feat/...` ou `fix/...` et modifier `openapi.yaml`.
+2. Choisir la version (SemVer, décision D2 : avant 1.0.0 un changement cassant est permis en mineure ; ensuite, majeure) et mettre à jour `info.version` dans `openapi.yaml` ainsi que `version` dans `package.json`.
+3. Documenter le changement dans `CHANGELOG.md`.
+4. Vérifier en local : `npm run lint` et `npm run generate:check`.
+5. Ouvrir la pull request ; la CI doit être verte avant fusion.
+6. Après fusion, depuis `main` à jour : `git tag vX.Y.Z && git push origin vX.Y.Z`.
+7. Le workflow publie la release ; les dépôts consommateurs (`nautilus-api`, `nautilus-flutter-commun`, `nautilus-back-office`) pointent alors sur ce tag.
+
 ## Licence
 
 [PolyForm Noncommercial 1.0.0](LICENSE)

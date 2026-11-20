@@ -1,0 +1,87 @@
+name: CI contrat
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  validate:
+    name: Lint et génération
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Lint Redocly
+        run: npm run lint
+      - name: Génération et contrôle des types
+        run: npm run generate:check
+
+  release:
+    name: Publication des clients
+    if: github.ref_type == 'tag'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # création de la release avec le GITHUB_TOKEN fourni, aucun secret à configurer
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Vérifier que le tag correspond à la version du contrat
+        run: |
+          version="$(node -e "const y=require('node:fs').readFileSync('openapi.yaml','utf8');console.log(/^  version:\s*(\S+)/m.exec(y)[1])")"
+          if [ "v${version}" != "${TAG}" ]; then
+            echo "Le tag ${TAG} ne correspond pas à info.version (${version})." >&2
+            exit 1
+          fi
+      - name: Générer les clients Dart et TypeScript
+        run: |
+          npm run generate:dart
+          npm run generate:ts
+      - name: Archiver
+        run: |
+          mkdir -p dist
+          (cd generated/dart && zip -qr "../../dist/nautilus-client-dart-${TAG}.zip" .)
+          (cd generated/ts && zip -qr "../../dist/nautilus-client-typescript-angular-${TAG}.zip" .)
+          cp openapi.yaml "dist/openapi-${TAG}.yaml"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: clients-${{ github.ref_name }}
+          path: dist/
+          if-no-files-found: error
+      - name: Créer la release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${TAG}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${TAG}" --generate-notes --verify-tag
